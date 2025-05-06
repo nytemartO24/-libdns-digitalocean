@@ -21,7 +21,7 @@ func (p *Provider) unFQDN(fqdn string) string {
 }
 
 // GetRecords lists all the records in the zone.
-func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
+func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.RR, error) {
 	records, err := p.getDNSEntries(ctx, p.unFQDN(zone))
 	if err != nil {
 		return nil, err
@@ -31,8 +31,8 @@ func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.Record
 }
 
 // AppendRecords adds records to the zone. It returns the records that were added.
-func (p *Provider) AppendRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
-	var appendedRecords []libdns.Record
+func (p *Provider) AppendRecords(ctx context.Context, zone string, records []libdns.RR) ([]libdns.RR, error) {
+	var appendedRecords []libdns.RR
 
 	for _, record := range records {
 		newRecord, err := p.addDNSEntry(ctx, p.unFQDN(zone), record)
@@ -47,8 +47,8 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 }
 
 // DeleteRecords deletes the records from the zone.
-func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
-	var deletedRecords []libdns.Record
+func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.RR) ([]libdns.RR, error) {
+	var deletedRecords []libdns.RR
 
 	for _, record := range records {
 		deletedRecord, err := p.removeDNSEntry(ctx, p.unFQDN(zone), record)
@@ -64,8 +64,8 @@ func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []lib
 
 // SetRecords sets the records in the zone, either by updating existing records
 // or creating new ones. It returns the updated records.
-func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
-	var setRecords []libdns.Record
+func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns.RR) ([]libdns.RR, error) {
+	var setRecords []libdns.RR
 
 	for _, record := range records {
 		// TODO: if there is no ID, look up the Name, and fill it in, or call
