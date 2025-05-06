@@ -40,7 +40,7 @@ func main() {
 
 	if testId != "" {
 		// fmt.Printf("Delete entry for %s (id:%s)\n", testName, testId)
-		// _, err = provider.DeleteRecords(context.TODO(), zone, []libdns.Record{libdns.Record{
+		// _, err = provider.DeleteRecords(context.TODO(), zone, []libdns.RR{libdns.RR{
 		// 	ID: testId,
 		// }})
 		// if err != nil {
@@ -48,7 +48,7 @@ func main() {
 		// }
 		// Set only works if we have a record.ID
 		fmt.Printf("Replacing entry for %s\n", testName)
-		_, err = provider.SetRecords(context.TODO(), zone, []libdns.Record{libdns.Record{
+		_, err = provider.SetRecords(context.TODO(), zone, []libdns.RR{libdns.RR{
 			Type:  "TXT",
 			Name:  testName,
 			Value: fmt.Sprintf("Replacement test entry created by libdns %s", time.Now()),
@@ -60,7 +60,7 @@ func main() {
 		}
 	} else {
 		fmt.Printf("Creating new entry for %s\n", testName)
-		_, err = provider.AppendRecords(context.TODO(), zone, []libdns.Record{libdns.Record{
+		_, err = provider.AppendRecords(context.TODO(), zone, []libdns.RR{libdns.RR{
 			Type:  "TXT",
 			Name:  testName,
 			Value: fmt.Sprintf("This is a test entry created by libdns %s", time.Now()),
