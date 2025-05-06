@@ -23,14 +23,14 @@ func (p *Provider) getClient() error {
 	return nil
 }
 
-func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Record, error) {
+func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.RR, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
 	p.getClient()
 
 	opt := &godo.ListOptions{}
-	var records []libdns.Record
+	var records []libdns.RR
 	for {
 		domains, resp, err := p.client.Domains.Records(ctx, zone, opt)
 		if err != nil {
@@ -38,7 +38,7 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 		}
 
 		for _, entry := range domains {
-			record := libdns.Record{
+			record := libdns.RR{
 				Name:  entry.Name,
 				Value: entry.Data,
 				Type:  entry.Type,
@@ -65,7 +65,7 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 	return records, nil
 }
 
-func (p *Provider) addDNSEntry(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) addDNSEntry(ctx context.Context, zone string, record libdns.RR) (libdns.RR, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -87,7 +87,7 @@ func (p *Provider) addDNSEntry(ctx context.Context, zone string, record libdns.R
 	return record, nil
 }
 
-func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdns.RR) (libdns.RR, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -106,7 +106,7 @@ func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdn
 	return record, nil
 }
 
-func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdns.RR) (libdns.RR, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
