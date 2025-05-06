@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/libdns/libdns"
-	"github.com/libdns/digitalocean"
+	"github.com/nytemartO24/-libdns-digitalocean"
 )
 
 func main() {
