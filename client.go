@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strconv"
 	"sync"
+	"fmt"
 	"time"
 
 	"github.com/digitalocean/godo"
@@ -175,7 +176,7 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 		TTL:  int(recordTTL(record).Seconds()),
 	}
 
-	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, req)
+	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, &req)
 	return record, err
 }
 
