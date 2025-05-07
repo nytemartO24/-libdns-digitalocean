@@ -182,6 +182,8 @@ func recordType(r libdns.Record) string {
 		return "CNAME"
 	case *txtRecord:
 		return "TXT"
+	case libdns.RR:
+		return v.Type
 	default:
 		log.Panicf("unsupported record type: %T", r)
 		return ""
@@ -190,13 +192,12 @@ func recordType(r libdns.Record) string {
 
 func recordName(r libdns.Record) string {
 	switch v := r.(type) {
-	case *addressRecord:
-		return v.Name
-	case *cnameRecord:
-		return v.Name
-	case *txtRecord:
+	case *addressRecord, *cnameRecord, *txtRecord:
+		return v.(interface{ GetName() string }).GetName()
+	case libdns.RR:
 		return v.Name
 	default:
+		log.Panicf("unsupported record name type: %T", r)
 		return ""
 	}
 }
@@ -209,20 +210,22 @@ func recordValue(r libdns.Record) string {
 		return v.Target
 	case *txtRecord:
 		return v.Text
+	case libdns.RR:
+		return v.Data
 	default:
+		log.Panicf("unsupported record value type: %T", r)
 		return ""
 	}
 }
 
 func recordTTL(r libdns.Record) time.Duration {
 	switch v := r.(type) {
-	case *addressRecord:
-		return v.TTL
-	case *cnameRecord:
-		return v.TTL
-	case *txtRecord:
+	case *addressRecord, *cnameRecord, *txtRecord:
+		return v.(interface{ GetTTL() time.Duration }).GetTTL()
+	case libdns.RR:
 		return v.TTL
 	default:
+		log.Panicf("unsupported record ttl type: %T", r)
 		return 0
 	}
 }
