@@ -172,14 +172,18 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 // --- helpers ---
 
 func recordType(r libdns.Record) string {
-	switch r.(type) {
+	switch v := r.(type) {
 	case *addressRecord:
-		return "A" // or "AAAA" if needed, DO uses separate entries
+		if v.IP.Is4() {
+			return "A"
+		}
+		return "AAAA"
 	case *cnameRecord:
 		return "CNAME"
 	case *txtRecord:
 		return "TXT"
 	default:
+		log.Panicf("unsupported record type: %T", r)
 		return ""
 	}
 }
