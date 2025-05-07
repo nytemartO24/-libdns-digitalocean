@@ -10,16 +10,33 @@ import (
 	"github.com/libdns/libdns"
 )
 
-type Client struct {
-	client *godo.Client
-	mutex  sync.Mutex
+type Provider struct {
+	APIToken string
+	client   *godo.Client
+	mutex    sync.Mutex
 }
 
-func (p *Provider) getClient() error {
+// Custom types embedding libdns record types with DigitalOcean-specific metadata
+
+type addressRecord struct {
+	libdns.Address
+	RecordID string
+}
+
+type cnameRecord struct {
+	libdns.CNAME
+	RecordID string
+}
+
+type txtRecord struct {
+	libdns.TXT
+	RecordID string
+}
+
+func (p *Provider) getClient() {
 	if p.client == nil {
 		p.client = godo.NewFromToken(p.APIToken)
 	}
-	return nil
 }
 
 func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Record, error) {
@@ -30,6 +47,7 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 
 	opt := &godo.ListOptions{}
 	var records []libdns.Record
+
 	for {
 		domainRecords, resp, err := p.client.Domains.Records(ctx, zone, opt)
 		if err != nil {
@@ -40,26 +58,31 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 			var record libdns.Record
 			switch entry.Type {
 			case "A", "AAAA":
-				record = &libdns.Address{
-					Address: entry.Data,
-					Type:    entry.Type,
-					Name:    entry.Name,
-					TTL:     time.Duration(entry.TTL) * time.Second,
-					ID:      strconv.Itoa(entry.ID),
+				record = &addressRecord{
+					Address: libdns.Address{
+						Address: entry.Data,
+						Name:    entry.Name,
+						TTL:     time.Duration(entry.TTL) * time.Second,
+					},
+					RecordID: strconv.Itoa(entry.ID),
 				}
 			case "CNAME":
-				record = &libdns.CNAME{
-					CNAME: entry.Data,
-					Name:  entry.Name,
-					TTL:   time.Duration(entry.TTL) * time.Second,
-					ID:    strconv.Itoa(entry.ID),
+				record = &cnameRecord{
+					CNAME: libdns.CNAME{
+						CNAME: entry.Data,
+						Name:  entry.Name,
+						TTL:   time.Duration(entry.TTL) * time.Second,
+					},
+					RecordID: strconv.Itoa(entry.ID),
 				}
 			case "TXT":
-				record = &libdns.TXT{
-					Text: entry.Data,
-					Name: entry.Name,
-					TTL:  time.Duration(entry.TTL) * time.Second,
-					ID:   strconv.Itoa(entry.ID),
+				record = &txtRecord{
+					TXT: libdns.TXT{
+						Text: entry.Data,
+						Name: entry.Name,
+						TTL:  time.Duration(entry.TTL) * time.Second,
+					},
+					RecordID: strconv.Itoa(entry.ID),
 				}
 			default:
 				continue
@@ -112,7 +135,7 @@ func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(record.ID())
+	id, err := strconv.Atoi(getRecordID(record))
 	if err != nil {
 		return record, err
 	}
@@ -127,7 +150,7 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(record.ID())
+	id, err := strconv.Atoi(getRecordID(record))
 	if err != nil {
 		return record, err
 	}
@@ -143,15 +166,15 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 	return record, err
 }
 
-// --- helper funcs for record interface access ---
+// --- helpers ---
 
 func recordType(r libdns.Record) string {
 	switch v := r.(type) {
-	case *libdns.Address:
+	case *addressRecord:
 		return v.Type
-	case *libdns.CNAME:
+	case *cnameRecord:
 		return "CNAME"
-	case *libdns.TXT:
+	case *txtRecord:
 		return "TXT"
 	default:
 		return ""
@@ -160,11 +183,11 @@ func recordType(r libdns.Record) string {
 
 func recordName(r libdns.Record) string {
 	switch v := r.(type) {
-	case *libdns.Address:
+	case *addressRecord:
 		return v.Name
-	case *libdns.CNAME:
+	case *cnameRecord:
 		return v.Name
-	case *libdns.TXT:
+	case *txtRecord:
 		return v.Name
 	default:
 		return ""
@@ -173,11 +196,11 @@ func recordName(r libdns.Record) string {
 
 func recordValue(r libdns.Record) string {
 	switch v := r.(type) {
-	case *libdns.Address:
+	case *addressRecord:
 		return v.Address
-	case *libdns.CNAME:
+	case *cnameRecord:
 		return v.CNAME
-	case *libdns.TXT:
+	case *txtRecord:
 		return v.Text
 	default:
 		return ""
@@ -186,24 +209,37 @@ func recordValue(r libdns.Record) string {
 
 func recordTTL(r libdns.Record) time.Duration {
 	switch v := r.(type) {
-	case *libdns.Address:
+	case *addressRecord:
 		return v.TTL
-	case *libdns.CNAME:
+	case *cnameRecord:
 		return v.TTL
-	case *libdns.TXT:
+	case *txtRecord:
 		return v.TTL
 	default:
 		return 0
 	}
 }
 
+func getRecordID(r libdns.Record) string {
+	switch v := r.(type) {
+	case *addressRecord:
+		return v.RecordID
+	case *cnameRecord:
+		return v.RecordID
+	case *txtRecord:
+		return v.RecordID
+	default:
+		return ""
+	}
+}
+
 func setRecordID(r libdns.Record, id string) {
 	switch v := r.(type) {
-	case *libdns.Address:
-		v.ID = id
-	case *libdns.CNAME:
-		v.ID = id
-	case *libdns.TXT:
-		v.ID = id
+	case *addressRecord:
+		v.RecordID = id
+	case *cnameRecord:
+		v.RecordID = id
+	case *txtRecord:
+		v.RecordID = id
 	}
 }
