@@ -11,13 +11,12 @@ import (
 )
 
 type Provider struct {
-	APIToken string
+	APIToken string `json:"auth_token"`
 	client   *godo.Client
 	mutex    sync.Mutex
 }
 
-// Custom types embedding libdns record types with DigitalOcean-specific metadata
-
+// Custom record wrappers to store DigitalOcean's record ID
 type addressRecord struct {
 	libdns.Address
 	RecordID string
@@ -56,31 +55,33 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 
 		for _, entry := range domainRecords {
 			var record libdns.Record
+			ttl := time.Duration(entry.TTL) * time.Second
+
 			switch entry.Type {
 			case "A", "AAAA":
 				record = &addressRecord{
 					Address: libdns.Address{
-						Address: entry.Data,
 						Name:    entry.Name,
-						TTL:     time.Duration(entry.TTL) * time.Second,
+						TTL:     ttl,
+						Address: entry.Data,
 					},
 					RecordID: strconv.Itoa(entry.ID),
 				}
 			case "CNAME":
 				record = &cnameRecord{
 					CNAME: libdns.CNAME{
-						CNAME: entry.Data,
 						Name:  entry.Name,
-						TTL:   time.Duration(entry.TTL) * time.Second,
+						TTL:   ttl,
+						CNAME: entry.Data,
 					},
 					RecordID: strconv.Itoa(entry.ID),
 				}
 			case "TXT":
 				record = &txtRecord{
 					TXT: libdns.TXT{
-						Text: entry.Data,
 						Name: entry.Name,
-						TTL:  time.Duration(entry.TTL) * time.Second,
+						TTL:  ttl,
+						Text: entry.Data,
 					},
 					RecordID: strconv.Itoa(entry.ID),
 				}
@@ -109,22 +110,18 @@ func (p *Provider) addDNSEntry(ctx context.Context, zone string, record libdns.R
 
 	p.getClient()
 
-	typeName := recordType(record)
-	name := recordName(record)
-	data := recordValue(record)
-	ttl := int(recordTTL(record).Seconds())
-
-	req := &godo.DomainRecordEditRequest{
-		Type: typeName,
-		Name: name,
-		Data: data,
-		TTL:  ttl,
+	req := godo.DomainRecordEditRequest{
+		Type: recordType(record),
+		Name: recordName(record),
+		Data: recordValue(record),
+		TTL:  int(recordTTL(record).Seconds()),
 	}
 
-	rec, _, err := p.client.Domains.CreateRecord(ctx, zone, req)
+	rec, _, err := p.client.Domains.CreateRecord(ctx, zone, &req)
 	if err != nil {
 		return record, err
 	}
+
 	setRecordID(record, strconv.Itoa(rec.ID))
 	return record, nil
 }
@@ -155,23 +152,23 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 		return record, err
 	}
 
-	req := &godo.DomainRecordEditRequest{
+	req := godo.DomainRecordEditRequest{
 		Type: recordType(record),
 		Name: recordName(record),
 		Data: recordValue(record),
 		TTL:  int(recordTTL(record).Seconds()),
 	}
 
-	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, req)
+	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, &req)
 	return record, err
 }
 
-// --- helpers ---
+// Helper methods to extract data from custom record types
 
 func recordType(r libdns.Record) string {
 	switch v := r.(type) {
 	case *addressRecord:
-		return v.Type
+		return "A"
 	case *cnameRecord:
 		return "CNAME"
 	case *txtRecord:
