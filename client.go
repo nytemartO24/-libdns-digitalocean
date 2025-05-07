@@ -8,13 +8,11 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/libdns/libdns"
-	"github.com/libdns/libdns/dnsutil"
 )
 
-type Provider struct {
-	APIToken string
-	client   *godo.Client
-	mutex    sync.Mutex
+type Client struct {
+	client *godo.Client
+	mutex  sync.Mutex
 }
 
 func (p *Provider) getClient() error {
@@ -32,7 +30,6 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 
 	opt := &godo.ListOptions{}
 	var records []libdns.Record
-
 	for {
 		domainRecords, resp, err := p.client.Domains.Records(ctx, zone, opt)
 		if err != nil {
@@ -40,28 +37,28 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 		}
 
 		for _, entry := range domainRecords {
-			record := libdns.Record(nil)
+			var record libdns.Record
 			switch entry.Type {
 			case "A", "AAAA":
 				record = &libdns.Address{
-					Type:  entry.Type,
-					Name:  dnsutil.TrimZone(entry.Name, zone),
-					TTL:   time.Duration(entry.TTL) * time.Second,
-					Value: entry.Data,
-					ID:    strconv.Itoa(entry.ID),
+					Address: entry.Data,
+					Type:    entry.Type,
+					Name:    entry.Name,
+					TTL:     time.Duration(entry.TTL) * time.Second,
+					ID:      strconv.Itoa(entry.ID),
 				}
 			case "CNAME":
 				record = &libdns.CNAME{
-					Name:  dnsutil.TrimZone(entry.Name, zone),
+					CNAME: entry.Data,
+					Name:  entry.Name,
 					TTL:   time.Duration(entry.TTL) * time.Second,
-					Target: entry.Data,
 					ID:    strconv.Itoa(entry.ID),
 				}
 			case "TXT":
 				record = &libdns.TXT{
-					Name: dnsutil.TrimZone(entry.Name, zone),
-					TTL:  time.Duration(entry.TTL) * time.Second,
 					Text: entry.Data,
+					Name: entry.Name,
+					TTL:  time.Duration(entry.TTL) * time.Second,
 					ID:   strconv.Itoa(entry.ID),
 				}
 			default:
@@ -89,16 +86,22 @@ func (p *Provider) addDNSEntry(ctx context.Context, zone string, record libdns.R
 
 	p.getClient()
 
-	entry, err := toDomainRecordEditRequest(record)
+	typeName := recordType(record)
+	name := recordName(record)
+	data := recordValue(record)
+	ttl := int(recordTTL(record).Seconds())
+
+	req := &godo.DomainRecordEditRequest{
+		Type: typeName,
+		Name: name,
+		Data: data,
+		TTL:  ttl,
+	}
+
+	rec, _, err := p.client.Domains.CreateRecord(ctx, zone, req)
 	if err != nil {
 		return record, err
 	}
-
-	rec, _, err := p.client.Domains.CreateRecord(ctx, zone, &entry)
-	if err != nil {
-		return record, err
-	}
-
 	setRecordID(record, strconv.Itoa(rec.ID))
 	return record, nil
 }
@@ -109,17 +112,13 @@ func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(getRecordID(record))
+	id, err := strconv.Atoi(record.ID())
 	if err != nil {
 		return record, err
 	}
 
 	_, err = p.client.Domains.DeleteRecord(ctx, zone, id)
-	if err != nil {
-		return record, err
-	}
-
-	return record, nil
+	return record, err
 }
 
 func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
@@ -128,63 +127,83 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(getRecordID(record))
+	id, err := strconv.Atoi(record.ID())
 	if err != nil {
 		return record, err
 	}
 
-	entry, err := toDomainRecordEditRequest(record)
-	if err != nil {
-		return record, err
+	req := &godo.DomainRecordEditRequest{
+		Type: recordType(record),
+		Name: recordName(record),
+		Data: recordValue(record),
+		TTL:  int(recordTTL(record).Seconds()),
 	}
 
-	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, &entry)
-	if err != nil {
-		return record, err
-	}
-
-	return record, nil
+	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, req)
+	return record, err
 }
 
-func toDomainRecordEditRequest(record libdns.Record) (godo.DomainRecordEditRequest, error) {
-	switch r := record.(type) {
-	case *libdns.Address:
-		return godo.DomainRecordEditRequest{
-			Type: r.Type, Name: r.Name, Data: r.Value, TTL: int(r.TTL.Seconds()),
-		}, nil
-	case *libdns.CNAME:
-		return godo.DomainRecordEditRequest{
-			Type: "CNAME", Name: r.Name, Data: r.Target, TTL: int(r.TTL.Seconds()),
-		}, nil
-	case *libdns.TXT:
-		return godo.DomainRecordEditRequest{
-			Type: "TXT", Name: r.Name, Data: r.Text, TTL: int(r.TTL.Seconds()),
-		}, nil
-	default:
-		return godo.DomainRecordEditRequest{}, &libdns.UnsupportedRecordError{Record: record}
-	}
-}
+// --- helper funcs for record interface access ---
 
-func setRecordID(record libdns.Record, id string) {
-	switch r := record.(type) {
+func recordType(r libdns.Record) string {
+	switch v := r.(type) {
 	case *libdns.Address:
-		r.ID = id
+		return v.Type
 	case *libdns.CNAME:
-		r.ID = id
+		return "CNAME"
 	case *libdns.TXT:
-		r.ID = id
-	}
-}
-
-func getRecordID(record libdns.Record) string {
-	switch r := record.(type) {
-	case *libdns.Address:
-		return r.ID
-	case *libdns.CNAME:
-		return r.ID
-	case *libdns.TXT:
-		return r.ID
+		return "TXT"
 	default:
 		return ""
+	}
+}
+
+func recordName(r libdns.Record) string {
+	switch v := r.(type) {
+	case *libdns.Address:
+		return v.Name
+	case *libdns.CNAME:
+		return v.Name
+	case *libdns.TXT:
+		return v.Name
+	default:
+		return ""
+	}
+}
+
+func recordValue(r libdns.Record) string {
+	switch v := r.(type) {
+	case *libdns.Address:
+		return v.Address
+	case *libdns.CNAME:
+		return v.CNAME
+	case *libdns.TXT:
+		return v.Text
+	default:
+		return ""
+	}
+}
+
+func recordTTL(r libdns.Record) time.Duration {
+	switch v := r.(type) {
+	case *libdns.Address:
+		return v.TTL
+	case *libdns.CNAME:
+		return v.TTL
+	case *libdns.TXT:
+		return v.TTL
+	default:
+		return 0
+	}
+}
+
+func setRecordID(r libdns.Record, id string) {
+	switch v := r.(type) {
+	case *libdns.Address:
+		v.ID = id
+	case *libdns.CNAME:
+		v.ID = id
+	case *libdns.TXT:
+		v.ID = id
 	}
 }
