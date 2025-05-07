@@ -1,4 +1,4 @@
-module github.com/nytemartO24/-libdns-digitalocean
+module github.com/nytemartO24/libdns-digitalocean
 
 go 1.14
 
