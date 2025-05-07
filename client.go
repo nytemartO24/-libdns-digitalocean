@@ -2,6 +2,8 @@ package digitalocean
 
 import (
 	"context"
+	"log"
+	"net/netip"
 	"strconv"
 	"sync"
 	"time"
@@ -16,7 +18,7 @@ type Provider struct {
 	mutex    sync.Mutex
 }
 
-// Custom record wrappers to store DigitalOcean's record ID
+// Custom record wrappers with DigitalOcean metadata
 type addressRecord struct {
 	libdns.Address
 	RecordID string
@@ -59,20 +61,24 @@ func (p *Provider) getDNSEntries(ctx context.Context, zone string) ([]libdns.Rec
 
 			switch entry.Type {
 			case "A", "AAAA":
+				ip, err := netip.ParseAddr(entry.Data)
+				if err != nil {
+					log.Panicf("Invalid IP address in DO record: %s", entry.Data)
+				}
 				record = &addressRecord{
 					Address: libdns.Address{
-						Name:    entry.Name,
-						TTL:     ttl,
-						Address: entry.Data,
+						Name: entry.Name,
+						TTL:  ttl,
+						IP:   ip,
 					},
 					RecordID: strconv.Itoa(entry.ID),
 				}
 			case "CNAME":
 				record = &cnameRecord{
 					CNAME: libdns.CNAME{
-						Name:  entry.Name,
-						TTL:   ttl,
-						CNAME: entry.Data,
+						Name:   entry.Name,
+						TTL:    ttl,
+						Target: entry.Data,
 					},
 					RecordID: strconv.Itoa(entry.ID),
 				}
@@ -163,12 +169,12 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 	return record, err
 }
 
-// Helper methods to extract data from custom record types
+// --- helpers ---
 
 func recordType(r libdns.Record) string {
-	switch v := r.(type) {
+	switch r.(type) {
 	case *addressRecord:
-		return "A"
+		return "A" // or "AAAA" if needed, DO uses separate entries
 	case *cnameRecord:
 		return "CNAME"
 	case *txtRecord:
@@ -194,9 +200,9 @@ func recordName(r libdns.Record) string {
 func recordValue(r libdns.Record) string {
 	switch v := r.(type) {
 	case *addressRecord:
-		return v.Address
+		return v.IP.String()
 	case *cnameRecord:
-		return v.CNAME
+		return v.Target
 	case *txtRecord:
 		return v.Text
 	default:
