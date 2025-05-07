@@ -138,9 +138,14 @@ func (p *Provider) removeDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(getRecordID(record))
+	idStr := getRecordID(record)
+	if idStr == "" {
+		return record, fmt.Errorf("cannot delete record: missing ID for %s (%s)", recordName(record), recordValue(record))
+	}
+
+	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		return record, err
+		return record, fmt.Errorf("invalid record ID %q: %w", idStr, err)
 	}
 
 	_, err = p.client.Domains.DeleteRecord(ctx, zone, id)
@@ -153,9 +158,14 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 
 	p.getClient()
 
-	id, err := strconv.Atoi(getRecordID(record))
+	idStr := getRecordID(record)
+	if idStr == "" {
+		return record, fmt.Errorf("cannot update record: missing ID for %s (%s)", recordName(record), recordValue(record))
+	}
+
+	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		return record, err
+		return record, fmt.Errorf("invalid record ID %q: %w", idStr, err)
 	}
 
 	req := godo.DomainRecordEditRequest{
@@ -165,7 +175,7 @@ func (p *Provider) updateDNSEntry(ctx context.Context, zone string, record libdn
 		TTL:  int(recordTTL(record).Seconds()),
 	}
 
-	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, &req)
+	_, _, err = p.client.Domains.EditRecord(ctx, zone, id, req)
 	return record, err
 }
 
@@ -238,7 +248,11 @@ func getRecordID(r libdns.Record) string {
 		return v.RecordID
 	case *txtRecord:
 		return v.RecordID
+	case libdns.RR:
+		// This record has no ID (likely an ACME challenge). Let the caller decide how to proceed.
+		return ""
 	default:
+		log.Panicf("unsupported record ID lookup type: %T", r)
 		return ""
 	}
 }
@@ -251,5 +265,10 @@ func setRecordID(r libdns.Record, id string) {
 		v.RecordID = id
 	case *txtRecord:
 		v.RecordID = id
+	case libdns.RR:
+		// You cannot assign an ID to libdns.RR (immutable). Log or ignore.
+		log.Printf("setRecordID: skipping unsupported type %T (libdns.RR)", r)
+	default:
+		log.Printf("setRecordID: unknown record type %T", r)
 	}
 }
